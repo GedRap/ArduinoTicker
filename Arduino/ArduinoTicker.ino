@@ -9,14 +9,18 @@ typedef struct tickerItem {
 
 const int maxItems = 2;
 int itemsAdded = 0;
-
 tickerItem tickerItems[maxItems];
+
+//buffer for reading from serial bus
+const int serialBufferSize = 32;
+char serialBuffer[serialBufferSize];
 
 // initialize the library with the numbers of the interface pins
 LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
 
+//mock method, replaces reading from serial bus
+//for testing
 void getNextItemFromSerial() {
-  //mocked
   static int lastSymbol = -1;
   static float lastPrice = 100;
 
@@ -34,6 +38,31 @@ void getNextItemFromSerial() {
   updateItemsList(symbol, lastPrice, 0);
 }
 
+//parse message from serial bus and update the list of tickers
+//message format:
+// SYMBOL;price;change;
+//e.g. GOOG;1034.21;0;
+void parseSerialInput(char buffer[32]) {   
+   String command = String(buffer);
+   int sepIndex = command.indexOf(";");
+   String symbol = command.substring(0,sepIndex);
+   command = command.substring(sepIndex+1);
+   
+   sepIndex = command.indexOf(";");
+   char conversionBuffer[32];
+   String priceSubstring = command.substring(0, sepIndex);
+   priceSubstring.toCharArray(conversionBuffer,32);
+   float price = atof(conversionBuffer);
+   
+   command = command.substring(sepIndex+1);
+   sepIndex = command.indexOf(";");
+   short change = (short) command.substring(0, sepIndex).toInt(); 
+   
+   updateItemsList(symbol, price, change);
+}
+
+//update the values displayed on the screen, reads from tickerItems
+//shows only max 2 values now
 void updateScreen() {
   lcd.clear();
   lcd.home();
@@ -52,6 +81,8 @@ void updateScreen() {
   }
 }
 
+//update items list
+//either update record for given symbol or append with a new one
 void updateItemsList(String symbol, float price, short change) {
   short index = -1;
 
@@ -75,11 +106,12 @@ void updateItemsList(String symbol, float price, short change) {
 }
 
 void setup() {
+  //set up serial connection
+  Serial.begin(9600);
+  Serial.println("READY");
+  
   // set up the LCD's number of columns and rows: 
   lcd.begin(16, 2);
-  lcd.clear();
-  lcd.home();
-  // Print a message to the LCD.
   lcd.setCursor(0,0);
   lcd.print("ArduinoTicker");
   lcd.setCursor(0,1);
@@ -88,7 +120,11 @@ void setup() {
 }
 
 void loop() {
+  byte received = Serial.readBytes(serialBuffer, serialBufferSize);
+  if(received > 0) {
+    parseSerialInput(serialBuffer);
+  }
+  
   updateScreen();
-  delay(1000);
-  getNextItemFromSerial();
+  delay(100);
 }
